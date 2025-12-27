@@ -1,0 +1,246 @@
+pages/index.tsx
+import { useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+const ALBUMS = [
+  { id: 'album_1', title: 'Papa Eternel' },
+  { id: 'album_2', title: 'Rendez-Vous Dan Cité Céleste' },
+  { id: 'album_3', title: 'Mo Condane Li' },
+  { id: 'album_4', title: 'Pa Kapav Viv San Toi' },
+  { id: 'album_5', title: 'Lamour Fraternel' },
+];
+
+function generateUnlockCode(deviceId: string, albumId: string): string {
+  let hash = 0;
+  const input = deviceId + albumId;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  
+  const absHash = Math.abs(hash);
+  const seg1 = (absHash % 10000).toString().padStart(4, '0');
+  const seg2 = ((absHash * 7) % 10000).toString().padStart(4, '0');
+  const seg3 = ((absHash * 13) % 10000).toString().padStart(4, '0');
+  
+  return `KING-${seg1.slice(0, 2)}${seg2.slice(0, 2)}-${seg2.slice(2, 4)}${seg3.slice(0, 2)}-${seg3.slice(2, 4)}${seg1.slice(2, 4)}`.toUpperCase();
+}
+
+interface Request {
+  id: number;
+  customer_name: string;
+  phone_number: string;
+  device_id: string;
+  album_id: string;
+  album_title: string;
+  payment_reference: string;
+  status: 'pending' | 'completed';
+  unlock_code: string | null;
+  created_at: string;
+}
+
+export default function AdminDashboard() {
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  async function fetchRequests() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('album_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching requests:', error);
+    } else {
+      setRequests(data || []);
+    }
+    setLoading(false);
+  }
+
+  async function generateCode(request: Request) {
+    const code = generateUnlockCode(request.device_id, request.album_id);
+    
+    const { error } = await supabase
+      .from('album_requests')
+      .update({ 
+        unlock_code: code,
+        status: 'completed'
+      })
+      .eq('id', request.id);
+    
+    if (error) {
+      console.error('Error updating request:', error);
+      alert('Failed to generate code');
+    } else {
+      fetchRequests();
+    }
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    alert('Copied to clipboard!');
+  }
+
+  return (
+    <div style={{ fontFamily: 'system-ui, sans-serif', minHeight: '100vh', background: '#0f172a' }}>
+      <div style={{ background: '#1e293b', padding: '24px', borderBottom: '1px solid #334155' }}>
+        <h1 style={{ margin: 0, color: '#fff', fontSize: '32px', fontWeight: 'bold' }}>
+          🎵 King Music Admin
+        </h1>
+        <p style={{ margin: '8px 0 0 0', color: '#94a3b8', fontSize: '16px' }}>
+          Unlock Request Management
+        </p>
+      </div>
+
+      <div style={{ padding: '24px' }}>
+        <button
+          onClick={fetchRequests}
+          disabled={loading}
+          style={{
+            background: '#3b82f6',
+            color: '#fff',
+            border: 'none',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: loading ? 0.5 : 1
+          }}
+        >
+          🔄 Refresh
+        </button>
+      </div>
+
+      <div style={{ padding: '0 24px 24px 24px' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
+            Loading...
+          </div>
+        ) : requests.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
+            No requests yet
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {requests.map((req) => (
+              <div
+                key={req.id}
+                style={{
+                  background: '#1e293b',
+                  border: '1px solid #334155',
+                  borderRadius: '12px',
+                  padding: '24px',
+                  position: 'relative'
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '24px',
+                    right: '24px',
+                    background: req.status === 'completed' ? '#10b981' : '#f59e0b',
+                    color: '#fff',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    textTransform: 'uppercase'
+                  }}
+                >
+                  {req.status}
+                </div>
+
+                <h3 style={{ margin: '0 0 16px 0', color: '#fff', fontSize: '20px', fontWeight: 'bold' }}>
+                  {req.album_title}
+                </h3>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ color: '#94a3b8', fontSize: '14px' }}>Customer:</div>
+                  <div style={{ color: '#fff', fontSize: '14px', fontWeight: '600' }}>{req.customer_name}</div>
+
+                  <div style={{ color: '#94a3b8', fontSize: '14px' }}>Phone:</div>
+                  <div style={{ color: '#fff', fontSize: '14px', fontWeight: '600' }}>{req.phone_number}</div>
+
+                  <div style={{ color: '#94a3b8', fontSize: '14px' }}>Device ID:</div>
+                  <div style={{ color: '#fff', fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {req.device_id}
+                  </div>
+
+                  <div style={{ color: '#94a3b8', fontSize: '14px' }}>Payment Ref:</div>
+                  <div style={{ color: '#fff', fontSize: '14px', fontWeight: '600' }}>{req.payment_reference || 'N/A'}</div>
+
+                  <div style={{ color: '#94a3b8', fontSize: '14px' }}>Date:</div>
+                  <div style={{ color: '#fff', fontSize: '14px' }}>
+                    {new Date(req.created_at).toLocaleString()}
+                  </div>
+                </div>
+
+                {req.unlock_code ? (
+                  <div style={{ background: '#0f172a', padding: '16px', borderRadius: '8px', marginTop: '16px' }}>
+                    <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px' }}>Unlock Code:</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ 
+                        color: '#3b82f6', 
+                        fontSize: '24px', 
+                        fontWeight: 'bold', 
+                        fontFamily: 'monospace',
+                        flex: 1
+                      }}>
+                        {req.unlock_code}
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard(req.unlock_code!)}
+                        style={{
+                          background: '#3b82f6',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '6px',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        📋 Copy
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => generateCode(req)}
+                    style={{
+                      background: '#10b981',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '12px 24px',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      marginTop: '16px',
+                      width: '100%'
+                    }}
+                  >
+                    ✨ Generate Unlock Code
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
